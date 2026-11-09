@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kavir Remote</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo">🎮 Kavir <b>Remote</b></div>
+  <input id="search" type="search" placeholder="جستجوی بازی یا برنامه…">
+  <nav>
+    <button data-tab="library" class="active">کتابخانه</button>
+    <button data-tab="running">در حال اجرا <span id="runCount" class="badge">0</span></button>
+    <button data-tab="connect">اتصال گوشی</button>
+  </nav>
+  <span id="ws" class="dot" title="وضعیت اتصال"></span>
+</header>
+
+<main>
+  <section id="library" class="tab active">
+    <div class="bar"><h2>بازی‌ها و برنامه‌ها</h2><button class="primary" id="addBtn">＋ افزودن</button></div>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <section id="running" class="tab">
+    <div class="bar"><h2>برنامه‌های در حال اجرا</h2><button id="refreshRun">⟳ Refresh</button></div>
+    <div id="runList" class="list"></div>
+  </section>
+
+  <section id="connect" class="tab">
+    <h2>اتصال اپلیکیشن اندروید</h2>
+    <div id="pairBox" class="card pair"></div>
+    <h3>دستگاه‌های متصل</h3>
+    <div id="devList" class="list"></div>
+  </section>
+
+  <section id="login" class="tab">
+    <div class="card pair">
+      <h2>ورود با کد</h2>
+      <p>کد ۶ رقمی نمایش‌داده‌شده روی کامپیوتر را وارد کنید.</p>
+      <input id="loginCode" inputmode="numeric" maxlength="6" placeholder="------">
+      <button class="primary" id="loginBtn">اتصال</button>
+    </div>
+  </section>
+</main>
+
+<div id="modal" class="modal hidden"><form id="form" class="card">
+  <h2 id="mTitle">افزودن</h2>
+  <label>نام<input name="name" required maxlength="80"></label>
+  <label>مسیر فایل اجرایی (EXE Path)<input name="exe_path" required dir="ltr" placeholder="C:\Games\Game\game.exe"></label>
+  <label>توضیحات<textarea name="description" rows="3"></textarea></label>
+  <div class="two">
+    <label>تصویر کاور<input type="file" name="cover" accept="image/*"></label>
+    <label>تصویر بکگراند<input type="file" name="background" accept="image/*"></label>
+  </div>
+  <div class="actions"><button type="button" id="cancel">انصراف</button><button class="primary">ذخیره</button></div>
+</form></div>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
