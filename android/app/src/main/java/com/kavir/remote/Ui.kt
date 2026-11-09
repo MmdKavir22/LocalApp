@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -68,7 +70,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -109,6 +120,39 @@ private fun Confirm(title: String, text: String, ok: String, onOk: () -> Unit, o
     )
 }
 
+// ------------------------------------------------------------------ background
+@Composable
+private fun AppBackground(vm: MainVM, content: @Composable () -> Unit) {
+    val accent = LocalAccent.current
+    Box(Modifier.fillMaxSize().background(KBg)) {
+        when (vm.bgStyle) {
+            0 -> {
+                val t = rememberInfiniteTransition(label = "bg")
+                val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Reverse), label = "p")
+                Box(Modifier.fillMaxSize().drawBehind {
+                    drawRect(Brush.radialGradient(listOf(KPurple.copy(alpha = 0.55f), Color.Transparent),
+                        center = Offset(size.width * (0.2f + 0.6f * p), size.height * 0.15f), radius = size.maxDimension * 0.7f))
+                    drawRect(Brush.radialGradient(listOf(KRed.copy(alpha = 0.28f), Color.Transparent),
+                        center = Offset(size.width * (0.9f - 0.6f * p), size.height * 0.8f), radius = size.maxDimension * 0.6f))
+                    drawRect(Brush.radialGradient(listOf(accent.copy(alpha = 0.14f), Color.Transparent),
+                        center = Offset(size.width * 0.5f, size.height * (0.4f + 0.3f * p)), radius = size.maxDimension * 0.45f))
+                })
+            }
+            1 -> {
+                val liveIds = vm.running.map { it.appId }.toSet()
+                val pick = vm.apps.firstOrNull { it.id in liveIds && (it.background.isNotEmpty() || it.cover.isNotEmpty()) }
+                    ?: vm.apps.firstOrNull { it.background.isNotEmpty() } ?: vm.apps.firstOrNull { it.cover.isNotEmpty() }
+                val file = pick?.background?.ifEmpty { pick.cover }.orEmpty()
+                if (file.isNotEmpty()) {
+                    AsyncImage(vm.api.imageUrl(file), null, Modifier.fillMaxSize().blur(22.dp), contentScale = ContentScale.Crop)
+                    Box(Modifier.fillMaxSize().background(KBg.copy(alpha = vm.dim)))
+                }
+            }
+        }
+        content()
+    }
+}
+
 // ------------------------------------------------------------------ connect
 @Composable
 fun ConnectScreen(vm: MainVM, modifier: Modifier = Modifier) {
@@ -122,7 +166,7 @@ fun ConnectScreen(vm: MainVM, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("🎮 Kavir Remote", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Text("🎮 ${vm.appName}", fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Text(
                 "سرور را روی کامپیوتر اجرا کنید، سپس آدرس و کد ۶ رقمی نمایش‌داده‌شده را وارد کنید.",
                 color = KMute
@@ -145,10 +189,11 @@ fun MainScreen(vm: MainVM, modifier: Modifier = Modifier) {
     var tab by remember { mutableIntStateOf(0) }
     val snack = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.events.collect { snack.showSnackbar(it.first) } }
+    AppBackground(vm) {
     Scaffold(
-        modifier = modifier, containerColor = KBg, snackbarHost = { SnackbarHost(snack) },
+        modifier = modifier, containerColor = Color.Transparent, snackbarHost = { SnackbarHost(snack) },
         bottomBar = {
-            NavigationBar(containerColor = KPanel) {
+            NavigationBar(containerColor = KPanel.copy(alpha = 0.92f)) {
                 NavigationBarItem(tab == 0, { tab = 0 }, { Icon(Icons.Filled.Home, null) }, label = { Text("خانه") })
                 NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Filled.PlayArrow, null) },
                     label = { Text("در حال اجرا (${vm.running.size})") })
@@ -158,8 +203,9 @@ fun MainScreen(vm: MainVM, modifier: Modifier = Modifier) {
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) { 0 -> HomeScreen(vm); 1 -> RunningScreen(vm); else -> SettingsScreen(vm) }
-            if (vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color = KOrange)
+            if (vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color = LocalAccent.current)
         }
+    }
     }
 }
 
@@ -224,6 +270,9 @@ private fun HomeScreen(vm: MainVM) {
             columns = GridCells.Adaptive(150.dp), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(vm.appName, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            }
             item(span = { GridItemSpan(maxLineSpan) }) { StatusCard(vm, hero) }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 OutlinedTextField(
@@ -241,7 +290,7 @@ private fun HomeScreen(vm: MainVM) {
                 GameCard(vm, a, a.id in liveIds, { editing = a }, { deleting = a })
             }
         }
-        FloatingActionButton({ adding = true }, Modifier.align(Alignment.BottomStart).padding(20.dp), containerColor = KOrange, contentColor = Color.Black) {
+        FloatingActionButton({ adding = true }, Modifier.align(Alignment.BottomStart).padding(20.dp), containerColor = LocalAccent.current, contentColor = Color.Black) {
             Icon(Icons.Filled.Add, "افزودن")
         }
     }
@@ -278,7 +327,7 @@ private fun EditDialog(vm: MainVM, item: AppItem?, onDismiss: () -> Unit) {
             TextButton(
                 onClick = { vm.save(item?.id, name, exe, desc, cover, bg, onDismiss) },
                 enabled = !vm.busy && name.isNotBlank() && exe.isNotBlank()
-            ) { Text(if (vm.busy) "…" else "ذخیره", color = KOrange, fontWeight = FontWeight.Bold) }
+            ) { Text(if (vm.busy) "…" else "ذخیره", color = LocalAccent.current, fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !vm.busy) { Text("انصراف") } }
     )
@@ -319,7 +368,7 @@ private fun RunningScreen(vm: MainVM) {
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(KPanel).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = KOrange)
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = LocalAccent.current)
         content()
     }
 }
@@ -332,6 +381,32 @@ private fun SettingsScreen(vm: MainVM) {
     val rel = vm.release
     val newer = rel != null && Updater.isNewer(rel.tag, BuildConfig.VERSION_NAME)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Section("شخصی‌سازی") {
+            var nm by remember { mutableStateOf(vm.appName) }
+            Field(nm, { nm = it }, "نام برنامه")
+            OutlinedButton({ vm.saveName(nm) }, Modifier.fillMaxWidth()) { Text("ذخیره نام") }
+            Text("رنگ اصلی", color = KMute, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Accents.forEachIndexed { i, c ->
+                    Box(
+                        Modifier.size(36.dp).clip(CircleShape).background(c)
+                            .border(if (vm.accentIdx == i) 3.dp else 0.dp, Color.White, CircleShape)
+                            .clickable { vm.setAccent(i) }
+                    )
+                }
+            }
+            Text("پس‌زمینه", color = KMute, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("متحرک", "تصویر بازی", "ساده").forEachIndexed { i, t ->
+                    if (vm.bgStyle == i) Button({ vm.setBg(i) }, Modifier.weight(1f)) { Text(t, fontSize = 12.sp) }
+                    else OutlinedButton({ vm.setBg(i) }, Modifier.weight(1f)) { Text(t, fontSize = 12.sp) }
+                }
+            }
+            if (vm.bgStyle == 1) {
+                Text("میزان تیرگی تصویر", color = KMute, fontSize = 13.sp)
+                Slider(vm.dim, { vm.dim = it }, valueRange = 0.2f..0.9f, onValueChangeFinished = { vm.persistDim() })
+            }
+        }
         Section("اتصال به کامپیوتر") {
             Text("${vm.pcName}  ·  ${vm.store.host}", style = LocalTextStyle.current.merge(ltr))
             Text(if (vm.online) "وضعیت: متصل" else "وضعیت: قطع (تلاش مجدد خودکار)", color = if (vm.online) KOk else KRed)
@@ -345,9 +420,9 @@ private fun SettingsScreen(vm: MainVM) {
                 Button({ vm.saveGithub(repo, token); vm.checkUpdate() }, Modifier.weight(1f), enabled = !vm.busy && repo.isNotBlank()) { Text("Check for Updates") }
                 Button({ vm.update() }, Modifier.weight(1f), enabled = !vm.busy && newer, colors = ButtonDefaults.buttonColors(containerColor = KRed)) { Text("Update") }
             }
-            if (vm.updateMsg.isNotBlank()) Text(vm.updateMsg, color = if (newer) KOrange else KMute)
+            if (vm.updateMsg.isNotBlank()) Text(vm.updateMsg, color = if (newer) LocalAccent.current else KMute)
             if (newer && rel != null && rel.notes.isNotBlank()) Text(rel.notes.take(500), color = KMute, fontSize = 12.sp)
-            if (vm.updateProgress in 0..99) LinearProgressIndicator(progress = { vm.updateProgress / 100f }, Modifier.fillMaxWidth(), color = KOrange)
+            if (vm.updateProgress in 0..99) LinearProgressIndicator(progress = { vm.updateProgress / 100f }, Modifier.fillMaxWidth(), color = LocalAccent.current)
             Text("نسخه نصب‌شده: ${BuildConfig.VERSION_NAME}", color = KMute, fontSize = 12.sp)
         }
     }

@@ -32,6 +32,21 @@ class MainVM(private val app: Application) : AndroidViewModel(app) {
     var running by mutableStateOf(listOf<RunItem>())
     var busy by mutableStateOf(false)
 
+    // personalization
+    var appName by mutableStateOf(store.appName.ifBlank { "Kavir Remote" })
+    var accentIdx by mutableStateOf(store.accent.coerceIn(0, Accents.size - 1))
+    var bgStyle by mutableStateOf(store.bgStyle.coerceIn(0, 2))
+    var dim by mutableStateOf(store.dim.coerceIn(0.2f, 0.9f))
+
+    fun saveName(n: String) {
+        val v = n.trim().take(30).ifBlank { "Kavir Remote" }
+        appName = v; store.appName = v
+        viewModelScope.launch { events.emit("نام برنامه ذخیره شد" to false) }
+    }
+    fun setAccent(i: Int) { accentIdx = i; store.accent = i }
+    fun setBg(i: Int) { bgStyle = i; store.bgStyle = i }
+    fun persistDim() { store.dim = dim }
+
     // updater state
     var release by mutableStateOf<Release?>(null)
     var updateMsg by mutableStateOf("")

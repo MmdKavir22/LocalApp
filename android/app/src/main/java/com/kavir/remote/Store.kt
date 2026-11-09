@@ -23,5 +23,10 @@ class Store(ctx: Context) {
     var ghToken: String get() = get("ghToken"); set(v) = put("ghToken", v)
     var ghRepo: String get() = get("ghRepo"); set(v) = put("ghRepo", v)
 
+    var appName: String get() = get("appName"); set(v) = put("appName", v)
+    var accent: Int get() = get("accent").toIntOrNull() ?: 0; set(v) = put("accent", v.toString())
+    var bgStyle: Int get() = get("bgStyle").toIntOrNull() ?: 0; set(v) = put("bgStyle", v.toString())
+    var dim: Float get() = get("dim").toFloatOrNull() ?: 0.6f; set(v) = put("dim", v.toString())
+
     fun clearServer() { host = ""; token = ""; pcName = "" }
 }
