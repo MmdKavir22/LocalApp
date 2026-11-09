@@ -24,12 +24,13 @@ def main():
 
     import uvicorn
     from app import main as m, db
-    db.init(); m.new_code()
+    db.init(); m.new_code(); m.HTTP_PORT = a.port
     print("\n" + "=" * 56 + "\n  Kavir Remote Server\n" + "=" * 56)
     for ip in m.lan_ips():
         print(f"  Phone address : {ip}:{a.port}")
     print(f"  Web panel     : http://localhost:{a.port}")
-    print(f"  Pairing code  : {m.pairing['code']}   (valid 10 min, one-time)")
+    print("  Phone         : just open the app - it finds this PC by itself")
+    print(f"  Manual code   : {m.pairing['code']}   (only if auto-discovery fails)")
     print("=" * 56 + "\n")
     if not a.no_browser:
         webbrowser.open(f"http://localhost:{a.port}")

@@ -43,3 +43,6 @@ label{display:grid;gap:6px;color:var(--mute);font-size:14px}
 .t{padding:10px 18px;border-radius:12px;background:var(--panel2);border:1px solid #ffffff22;animation:fade .25s}.t.err{border-color:var(--red)}.t.ok{border-color:var(--ok)}
 #loginCode{text-align:center;font-size:28px;letter-spacing:8px;direction:ltr;margin:12px 0}
 @media(max-width:640px){.grid{grid-template-columns:repeat(2,1fr);gap:12px}header{padding:10px}.code{font-size:40px}}
+.chk{display:flex;gap:10px;align-items:center;justify-content:center;color:var(--text);font-size:16px}.chk input{width:auto}
+.manual{margin:0 auto 20px;max-width:560px;color:var(--mute)}.manual summary{cursor:pointer;margin-bottom:10px}
+#autoBox .row{margin-top:10px;text-align:right}

@@ -16,6 +16,13 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+data class Info(val name: String, val id: String)
+
+sealed class AutoResult {
+    data class Approved(val token: String, val name: String) : AutoResult()
+    data class Pending(val id: String) : AutoResult()
+}
+
 class ApiException(msg: String, val code: Int = 0) : Exception(msg)
 
 data class AppItem(
@@ -65,9 +72,27 @@ class Api(private val store: Store) {
 
     private fun auth(path: String) = Request.Builder().url(base() + path).header("Authorization", "Bearer " + store.token)
 
-    suspend fun info(host: String = store.host): String = withContext(Dispatchers.IO) {
-        val b = call(Request.Builder().url(base(host) + "/api/info").build())
-        JSONObject(b).getString("name")
+    suspend fun info(host: String = store.host): Info = withContext(Dispatchers.IO) {
+        val j = JSONObject(call(Request.Builder().url(base(host) + "/api/info").build()))
+        Info(j.getString("name"), j.optString("id", ""))
+    }
+
+    /** Code-less pairing for phones on the local network. */
+    suspend fun autoPair(host: String, device: String): AutoResult = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("device_name", device).toString().toRequestBody(json)
+        val j = JSONObject(call(Request.Builder().url(base(host) + "/api/pair/auto").post(body).build()))
+        if (j.getString("status") == "approved") AutoResult.Approved(j.getString("token"), j.getString("name"))
+        else AutoResult.Pending(j.getString("request_id"))
+    }
+
+    /** null = still waiting for the PC owner to allow. */
+    suspend fun pollAuto(host: String, rid: String): AutoResult.Approved? = withContext(Dispatchers.IO) {
+        val j = JSONObject(call(Request.Builder().url(base(host) + "/api/pair/auto/$rid").build()))
+        when (j.getString("status")) {
+            "approved" -> AutoResult.Approved(j.getString("token"), j.getString("name"))
+            "denied" -> throw ApiException("درخواست روی کامپیوتر رد شد")
+            else -> null
+        }
     }
 
     /** Returns token + PC name. */

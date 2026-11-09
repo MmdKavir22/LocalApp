@@ -72,11 +72,14 @@ class MainVM(private val app: Application) : AndroidViewModel(app) {
     fun startSync() {
         syncJob?.cancel()
         syncJob = viewModelScope.launch {
+            var fails = 0
             while (isActive) {
                 try {
-                    pcName = api.info().also { store.pcName = it }
+                    val inf = api.info()
+                    pcName = inf.name; store.pcName = inf.name
+                    if (store.serverId.isBlank() && inf.id.isNotBlank()) store.serverId = inf.id
                     apps = api.apps(); running = api.running()
-                    online = true
+                    online = true; fails = 0
                     val closed = CompletableDeferred<Unit>()
                     socket = api.openSocket(object : WebSocketListener() {
                         override fun onMessage(webSocket: WebSocket, text: String) { handle(text) }
@@ -86,6 +89,12 @@ class MainVM(private val app: Application) : AndroidViewModel(app) {
                     closed.await()
                 } catch (e: ApiException) {
                     if (e.code == 401) { unpair(); return@launch }
+                    fails++
+                    // The PC may have a new IP (DHCP): look for the same server on the network.
+                    if (fails % 2 == 0 && store.serverId.isNotBlank()) {
+                        val f = Discovery.find().firstOrNull { it.id == store.serverId }
+                        if (f != null && f.host != store.host) store.host = f.host
+                    }
                 }
                 online = false
                 delay(3000)
@@ -105,12 +114,52 @@ class MainVM(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun pair(host: String, code: String) = op {
-        val (token, name) = api.pair(host, code, Build.MODEL ?: "Android")
-        store.host = host.trim(); store.token = token; store.pcName = name
+    private suspend fun finishPair(host: String, token: String, name: String, id: String) {
+        store.host = host.trim(); store.token = token; store.pcName = name; store.serverId = id
         pcName = name; paired = true
         events.emit("به $name متصل شدید" to false)
         startSync()
+    }
+
+    /** Manual fallback: address + 6 digit code. */
+    fun pair(host: String, code: String) = op {
+        val (token, name) = api.pair(host, code, Build.MODEL ?: "Android")
+        val id = try { api.info(host).id } catch (e: ApiException) { "" }
+        finishPair(host, token, name, id)
+    }
+
+    // ---------------------------------------------------------------- automatic discovery
+    var found by mutableStateOf(listOf<Found>())
+    var searching by mutableStateOf(false)
+    var waitMsg by mutableStateOf("")
+    private var discoverJob: Job? = null
+
+    fun discover() {
+        discoverJob?.cancel()
+        discoverJob = viewModelScope.launch {
+            searching = true; found = emptyList()
+            found = Discovery.find()
+            searching = false
+            if (found.size == 1 && !paired && !busy) connect(found[0])
+        }
+    }
+
+    fun connect(f: Found) = op {
+        waitMsg = ""
+        val first = api.autoPair(f.host, Build.MODEL ?: "Android")
+        val ok: AutoResult.Approved = when (first) {
+            is AutoResult.Approved -> first
+            is AutoResult.Pending -> {
+                waitMsg = "در انتظار تأیید روی کامپیوتر… (پنل وب ← اتصال گوشی)"
+                var res: AutoResult.Approved? = null
+                var tries = 0
+                try {
+                    while (res == null && tries < 80) { delay(1500); tries++; res = api.pollAuto(f.host, first.id) }
+                } finally { waitMsg = "" }
+                res ?: throw ApiException("تأیید روی کامپیوتر انجام نشد")
+            }
+        }
+        finishPair(f.host, ok.token, ok.name, f.id)
     }
 
     fun unpair() {

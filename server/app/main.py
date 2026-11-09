@@ -1,5 +1,5 @@
 """Kavir Remote - local server: REST + WebSocket + web dashboard."""
-import asyncio, hmac, os, secrets, socket, subprocess, time, uuid
+import asyncio, hmac, ipaddress, json, os, secrets, socket, subprocess, time, uuid
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +23,11 @@ app = FastAPI(title="Kavir Remote", version=VERSION)
 launched: dict[str, int] = {}                     # app_id -> pid we started
 clients: set[WebSocket] = set()
 pairing = {"code": "", "expires": 0.0, "fails": 0}
+HTTP_PORT = 8765
+DISCOVERY_PORT = int(os.environ.get("KAVIR_DISCOVERY_PORT", 8766))
+settings = {"auto_approve": True}                 # phones on the home network connect without a code
+pending_pairs: dict[str, dict] = {}
+_udp_transport = None
 _last_running = None
 
 # ------------------------------------------------------------------ pairing / auth
@@ -57,9 +62,25 @@ def lan_ips():
                 ips.append(a.address)
     return ips
 
+def server_id() -> str:
+    f = db.DATA_DIR / "server_id.txt"
+    if not f.exists():
+        f.write_text(uuid.uuid4().hex)
+    return f.read_text().strip()
+
+def load_settings():
+    f = db.DATA_DIR / "settings.json"
+    try:
+        settings.update({k: v for k, v in json.loads(f.read_text()).items() if k in settings})
+    except Exception:
+        pass
+
+def save_settings():
+    (db.DATA_DIR / "settings.json").write_text(json.dumps(settings))
+
 @app.get("/api/info")
 def info():
-    return {"app": "kavir-remote", "version": VERSION, "name": socket.gethostname()}
+    return {"app": "kavir-remote", "version": VERSION, "name": socket.gethostname(), "id": server_id()}
 
 class PairIn(BaseModel):
     code: str
@@ -79,6 +100,83 @@ async def pair(body: PairIn):
     new_code()                                    # one-time code
     await broadcast({"type": "devices"})
     return {"token": token, "name": socket.gethostname()}
+
+# ---- code-less pairing for phones on the local network
+def _is_private(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback
+    except ValueError:
+        return host in LOOPBACK
+
+class AutoPairIn(BaseModel):
+    device_name: str = "Android"
+
+@app.post("/api/pair/auto")
+async def pair_auto(body: AutoPairIn, request: Request):
+    ip = request.client.host if request.client else ""
+    if not _is_private(ip):
+        raise HTTPException(403, "فقط از شبکه‌ی محلی مجاز است")
+    name = (body.device_name or "Android").strip()[:60] or "Android"
+    now = time.time()
+    for k, v in list(pending_pairs.items()):
+        if now - v["created"] > 180:
+            pending_pairs.pop(k, None)
+    if settings["auto_approve"]:
+        token = secrets.token_urlsafe(32)
+        db.add_device(name, token)
+        await broadcast({"type": "devices"})
+        return {"status": "approved", "token": token, "name": socket.gethostname()}
+    if len(pending_pairs) >= 5:
+        raise HTTPException(429, "درخواست‌های زیادی در انتظار است")
+    rid = secrets.token_urlsafe(12)
+    pending_pairs[rid] = {"id": rid, "name": name, "ip": ip, "created": now, "status": "pending", "token": None}
+    await broadcast({"type": "pair_request"})
+    return {"status": "pending", "request_id": rid}
+
+@app.get("/api/pair/auto/{rid}")
+def pair_auto_status(rid: str):
+    p = pending_pairs.get(rid)
+    if not p or time.time() - p["created"] > 180:
+        pending_pairs.pop(rid, None)
+        raise HTTPException(404, "درخواست منقضی شد")
+    if p["status"] == "approved":
+        pending_pairs.pop(rid, None)
+        return {"status": "approved", "token": p["token"], "name": socket.gethostname()}
+    if p["status"] == "denied":
+        pending_pairs.pop(rid, None)
+    return {"status": p["status"]}
+
+@app.get("/api/pair/requests", dependencies=[Depends(local_only), Depends(auth)])
+def pair_requests():
+    return [{k: v[k] for k in ("id", "name", "ip", "created")} for v in pending_pairs.values() if v["status"] == "pending"]
+
+@app.post("/api/pair/requests/{rid}/{action}", dependencies=[Depends(local_only), Depends(auth)])
+async def pair_decide(rid: str, action: str):
+    p = pending_pairs.get(rid)
+    if not p or action not in ("allow", "deny"):
+        raise HTTPException(404, "پیدا نشد")
+    if action == "allow":
+        token = secrets.token_urlsafe(32)
+        db.add_device(p["name"], token)
+        p.update(status="approved", token=token)
+        await broadcast({"type": "devices"})
+    else:
+        p["status"] = "denied"
+    return {"ok": True}
+
+class SettingsIn(BaseModel):
+    auto_approve: bool
+
+@app.get("/api/settings", dependencies=[Depends(local_only), Depends(auth)])
+def get_settings():
+    return settings
+
+@app.put("/api/settings", dependencies=[Depends(local_only), Depends(auth)])
+def put_settings(body: SettingsIn):
+    settings["auto_approve"] = body.auto_approve
+    save_settings()
+    return settings
 
 @app.get("/api/local-session", dependencies=[Depends(local_only)])
 def local_session():
@@ -341,9 +439,26 @@ async def _watcher():
         except Exception as e:                    # never let the watcher die
             print("watcher error:", e)
 
+class _Discovery(asyncio.DatagramProtocol):
+    """Answers phone broadcasts so the app can find this PC without typing an IP."""
+    def connection_made(self, transport):
+        self.t = transport
+
+    def datagram_received(self, data, addr):
+        if data.strip() == b"KAVIR_DISCOVER":
+            reply = {"app": "kavir-remote", "id": server_id(), "name": socket.gethostname(), "port": HTTP_PORT}
+            self.t.sendto(json.dumps(reply).encode(), addr)
+
 @app.on_event("startup")
 async def startup():
+    global _udp_transport
     db.init()
+    load_settings()
+    try:
+        _udp_transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            _Discovery, local_addr=("0.0.0.0", DISCOVERY_PORT), allow_broadcast=True)
+    except OSError as e:
+        print(f"WARNING: auto-discovery disabled (UDP {DISCOVERY_PORT}): {e}")
     try: db.backup()
     except Exception as e: print("backup failed:", e)
     if not pairing["code"]:

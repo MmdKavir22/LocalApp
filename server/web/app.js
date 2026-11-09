@@ -111,8 +111,26 @@ async function loadPairing() {
       <button id="newCode">کد جدید</button>`;
     $("#newCode").onclick = async () => { await api("/api/pairing/refresh", { method: "POST" }); loadPairing(); };
   } catch (er) { $("#pairBox").innerHTML = `<p>${esc(er.message)}</p>`; }
-  loadDevices();
+  loadAuto(); loadDevices();
 }
+async function loadAuto() {
+  try {
+    const [st, rq] = await Promise.all([api("/api/settings"), api("/api/pair/requests")]);
+    $("#autoBox").innerHTML = `<h3>اتصال خودکار گوشی</h3>
+      <p>اپ اندروید روی همین Wi-Fi خودش این کامپیوتر را پیدا می‌کند؛ نیازی به IP یا کد نیست.</p>
+      <label class="chk"><input type="checkbox" id="autoChk" ${st.auto_approve ? "checked" : ""}> تأیید خودکار گوشی‌های جدید</label>
+      <small>${st.auto_approve ? "هر گوشی روی شبکه‌ی خانگی می‌تواند وصل شود. دستگاه‌های ناشناس را از لیست پایین قطع کنید." : "هر گوشی جدید باید اینجا تأیید شود."}</small>
+      ${rq.map(x => `<div class="row"><div class="grow"><b>${esc(x.name)}</b><br><small>${esc(x.ip)}</small></div>
+        <button class="primary" data-allow="${x.id}">اجازه</button><button class="danger" data-deny="${x.id}">رد</button></div>`).join("")}`;
+  } catch (er) { $("#autoBox").innerHTML = `<p>${esc(er.message)}</p>`; }
+}
+$("#autoBox").onchange = async e => {
+  if (e.target.id === "autoChk") { await api("/api/settings", { method: "PUT", json: { auto_approve: e.target.checked } }); loadAuto(); }
+};
+$("#autoBox").onclick = async e => {
+  const a = e.target.closest("[data-allow]"), d = e.target.closest("[data-deny]");
+  if (a || d) { await api(`/api/pair/requests/${(a || d).dataset.allow || (a || d).dataset.deny}/${a ? "allow" : "deny"}`, { method: "POST" }); loadAuto(); loadDevices(); }
+};
 async function loadDevices() {
   const d = await api("/api/devices");
   $("#devList").innerHTML = d.length ? d.map(x => `<div class="row"><div class="grow"><b>${esc(x.name)}</b><br>
@@ -135,6 +153,7 @@ function connectWS() {
     if (m.type === "running") { running = m.data; renderRunning(); }
     if (m.type === "apps") { apps = await api("/api/apps"); renderGrid(); }
     if (m.type === "devices" && $("#connect").classList.contains("active")) loadDevices();
+    if (m.type === "pair_request") { toast("یک گوشی درخواست اتصال دارد"); if ($("#connect").classList.contains("active")) loadAuto(); }
   };
   setInterval(() => ws.readyState === 1 && ws.send("ping"), 25000);
 }

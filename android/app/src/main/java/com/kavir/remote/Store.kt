@@ -28,5 +28,7 @@ class Store(ctx: Context) {
     var bgStyle: Int get() = get("bgStyle").toIntOrNull() ?: 0; set(v) = put("bgStyle", v.toString())
     var dim: Float get() = get("dim").toFloatOrNull() ?: 0.6f; set(v) = put("dim", v.toString())
 
-    fun clearServer() { host = ""; token = ""; pcName = "" }
+    var serverId: String get() = get("serverId"); set(v) = put("serverId", v)
+
+    fun clearServer() { host = ""; token = ""; pcName = ""; serverId = "" }
 }

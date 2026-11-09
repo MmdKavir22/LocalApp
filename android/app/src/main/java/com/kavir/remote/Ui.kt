@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -156,10 +157,12 @@ private fun AppBackground(vm: MainVM, content: @Composable () -> Unit) {
 // ------------------------------------------------------------------ connect
 @Composable
 fun ConnectScreen(vm: MainVM, modifier: Modifier = Modifier) {
+    var manual by remember { mutableStateOf(false) }
     var host by remember { mutableStateOf(vm.store.host) }
     var code by remember { mutableStateOf("") }
     val snack = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.events.collect { snack.showSnackbar(it.first) } }
+    LaunchedEffect(Unit) { vm.discover() }
     Scaffold(modifier = modifier, containerColor = KBg, snackbarHost = { SnackbarHost(snack) }) { pad ->
         Column(
             Modifier.padding(pad).padding(24.dp).fillMaxSize().verticalScroll(rememberScrollState()),
@@ -167,18 +170,39 @@ fun ConnectScreen(vm: MainVM, modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("🎮 ${vm.appName}", fontSize = 32.sp, fontWeight = FontWeight.Bold)
-            Text(
-                "سرور را روی کامپیوتر اجرا کنید، سپس آدرس و کد ۶ رقمی نمایش‌داده‌شده را وارد کنید.",
-                color = KMute
-            )
-            Field(host, { host = it }, "آدرس کامپیوتر (مثلاً 192.168.1.5:8765)", isLtr = true, keyboard = KeyboardType.Uri)
-            Field(code, { code = it.filter(Char::isDigit).take(6) }, "کد ۶ رقمی", isLtr = true, keyboard = KeyboardType.Number)
-            Button(
-                onClick = { vm.pair(host, code) },
-                enabled = !vm.busy && host.isNotBlank() && code.length == 6,
-                modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = KRed)
-            ) { Text(if (vm.busy) "در حال اتصال…" else "اتصال", fontWeight = FontWeight.Bold) }
+            when {
+                vm.waitMsg.isNotEmpty() -> {
+                    CircularProgressIndicator(color = LocalAccent.current)
+                    Text(vm.waitMsg, color = KMute)
+                }
+                vm.searching || vm.busy -> {
+                    CircularProgressIndicator(color = LocalAccent.current)
+                    Text(if (vm.busy) "در حال اتصال…" else "در حال جستجوی کامپیوتر روی Wi-Fi…", color = KMute)
+                }
+                vm.found.isEmpty() -> {
+                    Text("کامپیوتری پیدا نشد. سرور را روی کامپیوتر اجرا کنید و مطمئن شوید گوشی به همان Wi-Fi وصل است.", color = KMute)
+                    Button({ vm.discover() }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("جستجوی دوباره") }
+                }
+                else -> {
+                    Text("کامپیوترهای پیدا‌شده:", color = KMute)
+                    vm.found.forEach { f ->
+                        Button(
+                            { vm.connect(f) }, Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = KRed)
+                        ) { Text("🖥  ${f.name}", fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
+            TextButton({ manual = !manual }) { Text(if (manual) "بستن اتصال دستی" else "اتصال دستی (IP و کد)", color = KMute) }
+            if (manual) {
+                Field(host, { host = it }, "آدرس کامپیوتر (مثلاً 192.168.1.5:8765)", isLtr = true, keyboard = KeyboardType.Uri)
+                Field(code, { code = it.filter(Char::isDigit).take(6) }, "کد ۶ رقمی", isLtr = true, keyboard = KeyboardType.Number)
+                Button(
+                    onClick = { vm.pair(host, code) },
+                    enabled = !vm.busy && host.isNotBlank() && code.length == 6,
+                    modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
+                ) { Text("اتصال", fontWeight = FontWeight.Bold) }
+            }
         }
     }
 }
