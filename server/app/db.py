@@ -22,6 +22,18 @@ def init():
         d.mkdir(parents=True, exist_ok=True)
     with _lock, _conn() as c:
         c.executescript(SCHEMA)
+        _migrate(c)
+
+def _migrate(c):
+    """Additive migrations only - existing apps/devices are never touched or removed."""
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(apps)")}
+    if "icon" not in cols:
+        c.execute("ALTER TABLE apps ADD COLUMN icon TEXT DEFAULT ''")
+    if "position" not in cols:
+        c.execute("ALTER TABLE apps ADD COLUMN position INTEGER DEFAULT 0")
+        for i, r in enumerate(c.execute("SELECT id FROM apps ORDER BY name COLLATE NOCASE").fetchall(), 1):
+            c.execute("UPDATE apps SET position=? WHERE id=?", (i, r["id"]))
+    c.commit()
 
 def _conn():
     c = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -56,24 +68,38 @@ def backup(keep=10):
 
 # ---- apps
 def list_apps():
-    return _q("SELECT * FROM apps ORDER BY name COLLATE NOCASE")
+    return _q("SELECT * FROM apps ORDER BY position, name COLLATE NOCASE")
 
 def get_app(app_id):
     return _q("SELECT * FROM apps WHERE id=?", (app_id,), one=True)
 
 def create_app(name, exe_path, description=""):
     app_id, now = uuid.uuid4().hex[:12], time.time()
-    _q("INSERT INTO apps(id,name,exe_path,description,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+    _q("INSERT INTO apps(id,name,exe_path,description,created_at,updated_at,position) "
+       "VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(position),0)+1 FROM apps))",
        (app_id, name, exe_path, description, now, now), write=True)
     return get_app(app_id)
 
 def update_app(app_id, **fields):
-    allowed = {k: v for k, v in fields.items() if k in ("name", "exe_path", "description", "cover", "background")}
+    allowed = {k: v for k, v in fields.items() if k in ("name", "exe_path", "description", "cover", "background", "icon")}
     if not allowed:
         return get_app(app_id)
     sets = ",".join(f"{k}=?" for k in allowed)
     _q(f"UPDATE apps SET {sets}, updated_at=? WHERE id=?", (*allowed.values(), time.time(), app_id), write=True)
     return get_app(app_id)
+
+def reorder_apps(ids):
+    """Persist a new display order. Unknown ids are ignored; apps missing from `ids` keep their relative order at the end."""
+    with _lock:
+        known = [a["id"] for a in list_apps()]
+        order = [i for i in dict.fromkeys(ids) if i in known] + [i for i in known if i not in ids]
+        c = _conn()
+        try:
+            for pos, app_id in enumerate(order, 1):
+                c.execute("UPDATE apps SET position=? WHERE id=?", (pos, app_id))
+            c.commit()
+        finally:
+            c.close()
 
 def delete_app(app_id):
     return _q("DELETE FROM apps WHERE id=?", (app_id,), write=True)

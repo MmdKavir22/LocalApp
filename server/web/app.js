@@ -28,21 +28,36 @@ function show(tab) {
 }
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.tab));
 
-// ---------- library
+// ---------- library (compact left-to-right bars)
+const PAL = [["#5b2a86", "#e0243a"], ["#3b1a6e", "#ff8a1f"], ["#1b2a6b", "#8e2de2"], ["#6a1b4d", "#ff5f6d"], ["#14213d", "#5b2a86"], ["#7a1f2b", "#ff8a1f"]];
+const pal = n => { let h = 0; for (const c of n) h = (h * 31 + c.codePointAt(0)) >>> 0; return PAL[h % PAL.length]; };
 function renderGrid() {
   const q = $("#search").value.trim().toLowerCase();
   const live = new Set(running.map(r => r.app_id));
   const list = apps.filter(a => a.name.toLowerCase().includes(q));
-  $("#grid").innerHTML = list.length ? list.map(a => `
-    <div class="game" data-id="${a.id}" style="${a.cover ? `background-image:url('${img(a.cover)}')` : ""}">
-      ${a.cover ? "" : '<div class="ph">🎮</div>'}<div class="shade"></div>
-      ${live.has(a.id) ? '<span class="live">● در حال اجرا</span>' : ""}
-      <div class="tools"><button data-edit="${a.id}">✎</button><button data-del="${a.id}">🗑</button></div>
-      <div class="info"><h3>${esc(a.name)}</h3><p>${esc(a.description)}</p></div>
-    </div>`).join("") : `<p style="color:var(--mute)">${q ? "نتیجه‌ای پیدا نشد." : "هنوز چیزی اضافه نشده. روی «افزودن» بزنید."}</p>`;
+  $("#grid").innerHTML = list.length ? list.map(a => {
+    const [c1, c2] = pal(a.name), ic = a.icon || a.cover;
+    return `<div class="pbar" data-id="${a.id}" style="background:linear-gradient(to left,${c1},${c2})">
+      ${a.background ? `<div class="pbg" style="background-image:url('${img(a.background)}')"></div>` : ""}
+      <div class="pic">${ic ? `<img src="${img(ic)}" alt="">` : esc(a.name.slice(0, 1).toUpperCase())}</div>
+      <div class="pname">${esc(a.name)}</div>
+      ${live.has(a.id) ? '<span class="live">● اجرا</span>' : ""}
+      <div class="ptools"><button data-up="${a.id}">↑</button><button data-down="${a.id}">↓</button><button data-edit="${a.id}">✎</button><button data-del="${a.id}">🗑</button></div>
+    </div>`;
+  }).join("") : `<p style="color:var(--mute)">${q ? "نتیجه‌ای پیدا نشد." : "هنوز چیزی اضافه نشده. روی «افزودن» بزنید."}</p>`;
+}
+async function move(id, d) {
+  const i = apps.findIndex(a => a.id === id), j = i + d;
+  if (i < 0 || j < 0 || j >= apps.length) return;
+  [apps[i], apps[j]] = [apps[j], apps[i]]; renderGrid();
+  try { apps = await api("/api/apps/reorder", { method: "POST", json: { ids: apps.map(a => a.id) } }); renderGrid(); }
+  catch (er) { toast(er.message, "err"); apps = await api("/api/apps"); renderGrid(); }
 }
 $("#grid").onclick = async e => {
-  const edit = e.target.closest("[data-edit]"), del = e.target.closest("[data-del]"), card = e.target.closest(".game");
+  const edit = e.target.closest("[data-edit]"), del = e.target.closest("[data-del]"), card = e.target.closest(".pbar");
+  const up = e.target.closest("[data-up]"), down = e.target.closest("[data-down]");
+  if (up) return move(up.dataset.up, -1);
+  if (down) return move(down.dataset.down, 1);
   if (edit) return openForm(apps.find(a => a.id === edit.dataset.edit));
   if (del) {
     const a = apps.find(x => x.id === del.dataset.del);
@@ -62,7 +77,7 @@ function openForm(a) {
   editing = a || null; const f = $("#form");
   $("#mTitle").textContent = a ? "ویرایش" : "افزودن بازی / برنامه";
   f.name.value = a?.name || ""; f.exe_path.value = a?.exe_path || ""; f.description.value = a?.description || "";
-  f.cover.value = ""; f.background.value = "";
+  f.icon.value = ""; f.cover.value = ""; f.background.value = "";
   $("#modal").classList.remove("hidden");
 }
 $("#addBtn").onclick = () => openForm(null);
@@ -73,7 +88,7 @@ $("#form").onsubmit = async e => {
   try {
     let a = editing ? await api(`/api/apps/${editing.id}`, { method: "PUT", json: body })
                     : await api("/api/apps", { method: "POST", json: body });
-    for (const kind of ["cover", "background"]) {
+    for (const kind of ["icon", "cover", "background"]) {
       if (f[kind].files[0]) { const fd = new FormData(); fd.append("file", f[kind].files[0]);
         a = await api(`/api/apps/${a.id}/image/${kind}`, { method: "POST", body: fd }); }
     }

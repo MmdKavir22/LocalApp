@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db
+from . import db, icons
 
 VERSION = "1.0.0"
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -18,6 +18,7 @@ LOCAL_TOKEN = secrets.token_urlsafe(32)          # valid only for this server ru
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 ALLOWED_EXT = {".exe", ".bat", ".cmd", ".lnk"}
 MAX_IMG = 10 * 1024 * 1024
+IMG_KINDS = ("cover", "background", "icon")
 
 app = FastAPI(title="Kavir Remote", version=VERSION)
 launched: dict[str, int] = {}                     # app_id -> pid we started
@@ -225,13 +226,30 @@ def clean_name(name: str) -> str:
         raise HTTPException(400, "نام نامعتبر است")
     return n
 
+async def ensure_icon(a: dict) -> dict:
+    """If the app has no icon yet, try to extract the program's own icon (Windows only, best effort)."""
+    if a.get("icon"):
+        return a
+    name = await asyncio.to_thread(icons.extract_icon, a["exe_path"])
+    return db.update_app(a["id"], icon=name) if name else a
+
+class OrderIn(BaseModel):
+    ids: list[str]
+
 @app.get("/api/apps", dependencies=[Depends(auth)])
 def apps_list():
+    return db.list_apps()
+
+@app.post("/api/apps/reorder", dependencies=[Depends(auth)])
+async def apps_reorder(body: OrderIn):
+    db.reorder_apps(body.ids)
+    await broadcast({"type": "apps"})
     return db.list_apps()
 
 @app.post("/api/apps", dependencies=[Depends(auth)])
 async def apps_create(body: AppIn):
     a = db.create_app(clean_name(body.name), clean_exe(body.exe_path), body.description.strip()[:2000])
+    a = await ensure_icon(a)
     await broadcast({"type": "apps"})
     return a
 
@@ -241,6 +259,7 @@ async def apps_update(app_id: str, body: AppIn):
         raise HTTPException(404, "پیدا نشد")
     a = db.update_app(app_id, name=clean_name(body.name), exe_path=clean_exe(body.exe_path),
                       description=body.description.strip()[:2000])
+    a = await ensure_icon(a)
     await broadcast({"type": "apps"})
     return a
 
@@ -253,7 +272,7 @@ async def apps_delete(app_id: str, confirm: bool = False):
         raise HTTPException(400, "برای حذف تأیید لازم است (confirm=true)")
     db.backup()                                   # never lose data silently
     db.delete_app(app_id)
-    for f in (a["cover"], a["background"]):
+    for f in (a["cover"], a["background"], a.get("icon")):
         if f:
             (db.IMG_DIR / f).unlink(missing_ok=True)
     await broadcast({"type": "apps"})
@@ -269,7 +288,7 @@ def sniff(data: bytes) -> Optional[str]:
 
 @app.post("/api/apps/{app_id}/image/{kind}", dependencies=[Depends(auth)])
 async def upload_image(app_id: str, kind: str, file: UploadFile = File(...)):
-    if kind not in ("cover", "background"):
+    if kind not in IMG_KINDS:
         raise HTTPException(400, "kind نامعتبر")
     a = db.get_app(app_id)
     if not a:
@@ -291,7 +310,7 @@ async def upload_image(app_id: str, kind: str, file: UploadFile = File(...)):
 @app.delete("/api/apps/{app_id}/image/{kind}", dependencies=[Depends(auth)])
 async def remove_image(app_id: str, kind: str):
     a = db.get_app(app_id)
-    if not a or kind not in ("cover", "background"):
+    if not a or kind not in IMG_KINDS:
         raise HTTPException(404, "پیدا نشد")
     if a[kind]:
         (db.IMG_DIR / a[kind]).unlink(missing_ok=True)

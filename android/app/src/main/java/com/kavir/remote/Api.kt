@@ -27,14 +27,16 @@ class ApiException(msg: String, val code: Int = 0) : Exception(msg)
 
 data class AppItem(
     val id: String, val name: String, val exe: String,
-    val cover: String, val background: String, val description: String
+    val cover: String, val background: String, val description: String,
+    val icon: String = ""
 )
 
 data class RunItem(val appId: String, val name: String, val pid: Int, val status: String)
 
 fun JSONObject.toApp() = AppItem(
     getString("id"), getString("name"), getString("exe_path"),
-    optString("cover", ""), optString("background", ""), optString("description", "")
+    optString("cover", ""), optString("background", ""), optString("description", ""),
+    optString("icon", "")
 )
 
 fun JSONArray.toRunning(): List<RunItem> = (0 until length()).map {
@@ -124,6 +126,11 @@ class Api(private val store: Store) {
             .addFormDataPart("file", "image", bytes.toRequestBody("application/octet-stream".toMediaType())).build()
         call(auth("/api/apps/$id/image/$kind").post(form).build())
         Unit
+    }
+
+    suspend fun reorder(ids: List<String>) = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("ids", JSONArray(ids)).toString().toRequestBody(json)
+        call(auth("/api/apps/reorder").post(body).build()); Unit
     }
 
     suspend fun deleteApp(id: String) = withContext(Dispatchers.IO) {

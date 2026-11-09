@@ -10,19 +10,19 @@ server/    سرور ویندوز (Python / FastAPI) + پنل وب (server/web)
 
 ## ۱) راه‌اندازی سرور (ویندوز)
 
-1. [Python 3.10+](https://www.python.org/downloads/) را نصب کنید (تیک *Add to PATH*).
-2. پوشه‌ی `server` (یا فایل `KavirRemoteServer-*.zip` از Releases) را باز کنید و `start_server.bat` را اجرا کنید.
+1. [Python 3.10+](https://www.python.org/downloads/) را نصب کنید (تیک *Add to PATH*). **محیط مجازی (venv) لازم نیست**؛ برنامه مستقیم با همین Python اجرا می‌شود.
+2. پوشه‌ی `server` (یا فایل `KavirRemoteServer-*.zip` از Releases) را باز کنید و `start_server.bat` را اجرا کنید. وابستگی‌ها در اولین اجرا خودکار نصب می‌شوند (یا `install_dependencies.bat`).
 3. در پنجره‌ی سرور آدرس‌ها نمایش داده می‌شود (فقط برای اتصال دستی لازم است).
 4. پنل وب خودکار باز می‌شود: `http://localhost:8765`
 
 > فایروال ویندوز: بار اول اجازه‌ی دسترسی Python روی **Private networks** را بدهید (پورت‌های TCP `8765` و UDP `8766` برای پیدا کردن خودکار).
 
-اجرای خودکار با ویندوز (اختیاری):
-```
-python run.py --install-autostart      # فعال
-python run.py --remove-autostart       # غیرفعال
-```
-پورت دلخواه: `python run.py --port 9000`.
+اجرای خودکار با ویندوز (اختیاری): `install_autostart.bat` را اجرا کنید (یا `python run.py --install-autostart`).
+- با **Task Scheduler** ساخته می‌شود و با هر ورود به ویندوز سرور بدون پنجره اجرا می‌شود؛ `remove_autostart.bat` آن را حذف می‌کند.
+- از اجرای هم‌زمان چند نمونه جلوگیری می‌شود (اجرای دوباره فقط پنل وب را باز می‌کند).
+- اگر سرور Crash کند، خودکار دوباره اجرا می‌شود (نظارت داخلی + RestartOnFailure در Task Scheduler). لاگ: `%APPDATA%\KavirRemote\server.log`.
+- وضعیت: `python run.py --autostart-status`. پورت دلخواه: `python run.py --port 9000`.
+
 برای بستن برنامه‌هایی که با Administrator اجرا شده‌اند، سرور را هم به‌صورت Administrator اجرا کنید.
 
 ## ۲) اتصال گوشی
@@ -35,8 +35,8 @@ python run.py --remove-autostart       # غیرفعال
 
 ## ۳) استفاده
 
-- **افزودن بازی/برنامه**: نام، مسیر EXE (مثلاً `C:\Games\X\x.exe`)، توضیحات، کاور و بکگراند (از گالری).
-- لمس کارت ← اجرای واقعی روی ویندوز. نشان «در حال اجرا» لحظه‌ای نمایش داده می‌شود.
+- **صفحه‌ی اصلی گوشی** فقط لیست برنامه‌هاست (نوارهای افقی کوچک با آیکون و نام). لمس هر نوار ← اجرای همان برنامه روی ویندوز.
+- **تنظیمات ← برنامه‌ها**: افزودن، تغییر نام، آیکون، مسیر EXE، بکگراند، حذف و تغییر ترتیب (↑ ↓). همه‌چیز روی PC ذخیره و با پنل وب و بقیه‌ی گوشی‌ها هم‌گام می‌شود. اگر آیکون انتخاب نکنید، آیکون خود برنامه از ویندوز گرفته می‌شود.
 - تب **در حال اجرا**: نام، PID، دکمه‌ی بستن (با تأیید) و Refresh.
 - هر تغییر در پنل وب یا اپ، از طریق WebSocket فوراً در دیگری دیده می‌شود. داده‌ها در `%APPDATA%\KavirRemote` (دیتابیس SQLite، تصاویر و پوشه‌ی `backups`) ذخیره می‌شوند.
 
@@ -62,6 +62,6 @@ python run.py --remove-autostart       # غیرفعال
 ## توسعه
 
 ```
-cd server && pip install -r requirements.txt && python run.py
+cd server && pip install -r requirements.txt && python run.py   # بدون venv
 cd android && gradle assembleDebug        # نیاز به Android SDK
 ```

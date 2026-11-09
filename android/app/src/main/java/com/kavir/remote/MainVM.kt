@@ -174,14 +174,24 @@ class MainVM(private val app: Application) : AndroidViewModel(app) {
         api.launch(a.id); events.emit("«${a.name}» در حال اجرا روی کامپیوتر" to false)
     }
 
-    fun save(id: String?, name: String, exe: String, desc: String, cover: Uri?, bg: Uri?, onOk: () -> Unit) = op {
+    fun save(id: String?, name: String, exe: String, desc: String, icon: Uri?, cover: Uri?, bg: Uri?, onOk: () -> Unit) = op {
         val saved = api.saveApp(id, name.trim(), exe.trim(), desc.trim())
         val cr = app.contentResolver
+        icon?.let { api.uploadImage(saved.id, "icon", it, cr) }
         cover?.let { api.uploadImage(saved.id, "cover", it, cr) }
         bg?.let { api.uploadImage(saved.id, "background", it, cr) }
         apps = api.apps()
         events.emit("ذخیره شد" to false)
         onOk()
+    }
+
+    /** Move an app up/down in the list; the new order is saved on the PC and synced to every client. */
+    fun move(index: Int, delta: Int) {
+        val l = apps.toMutableList(); val j = index + delta
+        if (index !in l.indices || j !in l.indices) return
+        val t = l[index]; l[index] = l[j]; l[j] = t
+        apps = l
+        op { api.reorder(l.map { it.id }); apps = api.apps() }
     }
 
     fun delete(a: AppItem) = op { api.deleteApp(a.id); apps = api.apps(); events.emit("حذف شد" to false) }

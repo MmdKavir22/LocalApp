@@ -14,17 +14,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -46,7 +42,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -92,6 +87,16 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import coil.compose.AsyncImage
 
 private val ltr = TextStyle(textDirection = TextDirection.Ltr)
@@ -234,94 +239,74 @@ fun MainScreen(vm: MainVM, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun StatusCard(vm: MainVM, hero: AppItem?) {
-    Box(Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(listOf(KPurple, Color(0xFF1A0B2B))))) {
-        if (hero != null) AsyncImage(vm.api.imageUrl(hero.background), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.55f)
-        Box(Modifier.fillMaxSize().background(shade))
-        Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(if (vm.online) KOk else KRed))
-                Spacer(Modifier.size(8.dp))
-                Text(vm.pcName.ifBlank { "کامپیوتر" }, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            }
-            Text(
-                (if (vm.online) "متصل" else "قطع — در حال تلاش برای اتصال مجدد…") + " · ${vm.apps.size} برنامه · ${vm.running.size} در حال اجرا",
-                color = KMute, fontSize = 13.sp
-            )
-        }
-        IconButton({ vm.refresh() }, Modifier.align(Alignment.TopStart)) { Icon(Icons.Filled.Refresh, "Refresh") }
+private fun AppIcon(vm: MainVM, a: AppItem, size: Dp) {
+    val file = a.icon.ifEmpty { a.cover }
+    Box(Modifier.size(size).clip(RoundedCornerShape(12.dp)).background(Color(0x33FFFFFF)), contentAlignment = Alignment.Center) {
+        if (file.isNotEmpty()) AsyncImage(vm.api.imageUrl(file), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Text(a.name.take(1).uppercase(), fontWeight = FontWeight.Bold, fontSize = (size.value * 0.45f).sp)
     }
 }
 
+private val barPalette = listOf(
+    Color(0xFF5B2A86) to Color(0xFFE0243A), Color(0xFF3B1A6E) to Color(0xFFFF8A1F),
+    Color(0xFF1B2A6B) to Color(0xFF8E2DE2), Color(0xFF6A1B4D) to Color(0xFFFF5F6D),
+    Color(0xFF14213D) to Color(0xFF5B2A86), Color(0xFF7A1F2B) to Color(0xFFFF8A1F)
+)
+private fun barColors(name: String) = barPalette[(name.hashCode() and 0x7fffffff) % barPalette.size]
+
+/** Compact horizontal bar: laid out left-to-right (icon, name), gradient running right-to-left, soft press animation. */
 @Composable
-private fun GameCard(vm: MainVM, a: AppItem, live: Boolean, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Box(
-        Modifier.aspectRatio(0.75f).clip(RoundedCornerShape(20.dp)).background(KPanel)
-            .clickable { vm.launch(a) }
-    ) {
-        if (a.cover.isNotEmpty()) AsyncImage(vm.api.imageUrl(a.cover), a.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(KPurple, Color(0xFF1A0B2B)))), contentAlignment = Alignment.Center) {
-            Text("🎮", fontSize = 48.sp)
-        }
-        Box(Modifier.fillMaxSize().background(shade))
-        Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-            Text(a.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (a.description.isNotBlank()) Text(a.description, color = KMute, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        if (live) Text(
-            "● اجرا", color = Color(0xFF021A0E), fontSize = 11.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(99.dp)).background(KOk).padding(horizontal = 8.dp, vertical = 2.dp)
-        )
-        Row(Modifier.align(Alignment.TopStart)) {
-            IconButton(onEdit, Modifier.size(34.dp)) { Icon(Icons.Filled.Edit, "ویرایش", Modifier.size(18.dp)) }
-            IconButton(onDelete, Modifier.size(34.dp)) { Icon(Icons.Filled.Delete, "حذف", Modifier.size(18.dp)) }
+private fun AppBar(vm: MainVM, a: AppItem, live: Boolean, modifier: Modifier = Modifier) {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "press")
+    val (c1, c2) = barColors(a.name)
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier.fillMaxWidth().height(60.dp).scale(scale).clip(RoundedCornerShape(16.dp))
+                .drawBehind { drawRect(Brush.horizontalGradient(listOf(c1, c2), startX = size.width, endX = 0f)) }
+                .clickable(interactionSource = src, indication = null) { vm.launch(a) }
+        ) {
+            if (a.background.isNotEmpty())
+                AsyncImage(vm.api.imageUrl(a.background), null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.22f)
+            Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                AppIcon(vm, a, 40.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(a.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (live) Text(
+                    "● اجرا", color = Color(0xFF021A0E), fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(KOk).padding(horizontal = 8.dp, vertical = 2.dp)
+                ) else Icon(Icons.Filled.PlayArrow, null, tint = Color.White.copy(alpha = 0.8f))
+            }
         }
     }
 }
 
+/** Home = only the list of apps. Tap an app to launch it on the PC. Everything else lives in Settings. */
 @Composable
 private fun HomeScreen(vm: MainVM) {
     var query by remember { mutableStateOf("") }
-    var adding by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<AppItem?>(null) }
-    var deleting by remember { mutableStateOf<AppItem?>(null) }
     val liveIds = vm.running.map { it.appId }.toSet()
     val list = vm.apps.filter { it.name.contains(query.trim(), ignoreCase = true) }
-    val hero = vm.apps.firstOrNull { it.id in liveIds && it.background.isNotEmpty() } ?: vm.apps.firstOrNull { it.background.isNotEmpty() }
-
-    Box(Modifier.fillMaxSize()) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(150.dp), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(vm.appName, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) { StatusCard(vm, hero) }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                OutlinedTextField(
-                    query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    placeholder = { Text("جستجوی بازی یا برنامه…") },
-                    leadingIcon = { Icon(Icons.Filled.Search, null) },
-                    trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, null) } },
-                    shape = RoundedCornerShape(16.dp)
-                )
-            }
-            if (list.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(if (query.isBlank()) "هنوز چیزی اضافه نشده. با دکمه ＋ بازی یا برنامه اضافه کنید." else "نتیجه‌ای پیدا نشد.", color = KMute)
-            }
-            gridItems(list, key = { it.id }) { a ->
-                GameCard(vm, a, a.id in liveIds, { editing = a }, { deleting = a })
-            }
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(if (vm.online) KOk else KRed))
+            Spacer(Modifier.size(8.dp))
+            Text(vm.appName, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(if (vm.online) vm.pcName else "قطع — تلاش مجدد…", color = KMute, fontSize = 12.sp)
         }
-        FloatingActionButton({ adding = true }, Modifier.align(Alignment.BottomStart).padding(20.dp), containerColor = LocalAccent.current, contentColor = Color.Black) {
-            Icon(Icons.Filled.Add, "افزودن")
+        OutlinedTextField(
+            query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
+            placeholder = { Text("جستجو…") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
+            trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Filled.Close, null) } },
+            shape = RoundedCornerShape(16.dp)
+        )
+        Spacer(Modifier.height(10.dp))
+        if (list.isEmpty()) Text(if (vm.apps.isEmpty()) "هنوز برنامه‌ای اضافه نشده. از «تنظیمات» اضافه کنید." else "نتیجه‌ای پیدا نشد.", color = KMute)
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+            items(list, key = { it.id }) { a -> AppBar(vm, a, a.id in liveIds, Modifier.animateItem()) }
         }
     }
-
-    if (adding) EditDialog(vm, null) { adding = false }
-    editing?.let { EditDialog(vm, it) { editing = null } }
-    deleting?.let { Confirm("حذف از لیست", "«${it.name}» از لیست حذف شود؟ فایل اصلی روی کامپیوتر پاک نمی‌شود.", "حذف", { vm.delete(it) }) { deleting = null } }
 }
 
 @Composable
@@ -329,8 +314,10 @@ private fun EditDialog(vm: MainVM, item: AppItem?, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(item?.name ?: "") }
     var exe by remember { mutableStateOf(item?.exe ?: "") }
     var desc by remember { mutableStateOf(item?.description ?: "") }
+    var icon by remember { mutableStateOf<Uri?>(null) }
     var cover by remember { mutableStateOf<Uri?>(null) }
     var bg by remember { mutableStateOf<Uri?>(null) }
+    val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { if (it != null) icon = it }
     val pickCover = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { if (it != null) cover = it }
     val pickBg = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { if (it != null) bg = it }
     AlertDialog(
@@ -341,15 +328,17 @@ private fun EditDialog(vm: MainVM, item: AppItem?, onDismiss: () -> Unit) {
                 Field(name, { name = it }, "نام")
                 Field(exe, { exe = it }, "مسیر فایل اجرایی در ویندوز (EXE Path)", isLtr = true)
                 Field(desc, { desc = it }, "توضیحات", singleLine = false)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton({ pickCover.launch("image/*") }, Modifier.weight(1f)) { Text(if (cover != null) "کاور ✓" else "تصویر کاور", fontSize = 12.sp) }
-                    OutlinedButton({ pickBg.launch("image/*") }, Modifier.weight(1f)) { Text(if (bg != null) "بکگراند ✓" else "تصویر بکگراند", fontSize = 12.sp) }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton({ pickIcon.launch("image/*") }, Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text(if (icon != null) "آیکون ✓" else "آیکون", fontSize = 12.sp) }
+                    OutlinedButton({ pickCover.launch("image/*") }, Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text(if (cover != null) "کاور ✓" else "کاور", fontSize = 12.sp) }
+                    OutlinedButton({ pickBg.launch("image/*") }, Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text(if (bg != null) "بکگراند ✓" else "بکگراند", fontSize = 12.sp) }
                 }
+                Text("اگر آیکون انتخاب نکنید، آیکون خود برنامه از ویندوز گرفته می‌شود.", color = KMute, fontSize = 11.sp)
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { vm.save(item?.id, name, exe, desc, cover, bg, onDismiss) },
+                onClick = { vm.save(item?.id, name, exe, desc, icon, cover, bg, onDismiss) },
                 enabled = !vm.busy && name.isNotBlank() && exe.isNotBlank()
             ) { Text(if (vm.busy) "…" else "ذخیره", color = LocalAccent.current, fontWeight = FontWeight.Bold) }
         },
@@ -402,9 +391,28 @@ private fun SettingsScreen(vm: MainVM) {
     var repo by remember { mutableStateOf(vm.store.ghRepo) }
     var token by remember { mutableStateOf(vm.store.ghToken) }
     var disconnect by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<AppItem?>(null) }
+    var deleting by remember { mutableStateOf<AppItem?>(null) }
     val rel = vm.release
     val newer = rel != null && Updater.isNewer(rel.tag, BuildConfig.VERSION_NAME)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Section("برنامه‌ها") {
+            Button({ adding = true }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.size(6.dp)); Text("افزودن برنامه")
+            }
+            if (vm.apps.isEmpty()) Text("هنوز برنامه‌ای اضافه نشده.", color = KMute, fontSize = 13.sp)
+            vm.apps.forEachIndexed { i, a ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(KPanel2).padding(start = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(vm, a, 36.dp)
+                    Text(a.name, Modifier.weight(1f).padding(horizontal = 10.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    IconButton({ vm.move(i, -1) }, Modifier.size(36.dp), enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, "بالا") }
+                    IconButton({ vm.move(i, 1) }, Modifier.size(36.dp), enabled = i < vm.apps.size - 1) { Icon(Icons.Filled.KeyboardArrowDown, "پایین") }
+                    IconButton({ editing = a }, Modifier.size(36.dp)) { Icon(Icons.Filled.Edit, "ویرایش", Modifier.size(20.dp)) }
+                    IconButton({ deleting = a }, Modifier.size(36.dp)) { Icon(Icons.Filled.Delete, "حذف", Modifier.size(20.dp)) }
+                }
+            }
+        }
         Section("شخصی‌سازی") {
             var nm by remember { mutableStateOf(vm.appName) }
             Field(nm, { nm = it }, "نام برنامه")
@@ -450,5 +458,8 @@ private fun SettingsScreen(vm: MainVM) {
             Text("نسخه نصب‌شده: ${BuildConfig.VERSION_NAME}", color = KMute, fontSize = 12.sp)
         }
     }
+    if (adding) EditDialog(vm, null) { adding = false }
+    editing?.let { EditDialog(vm, it) { editing = null } }
+    deleting?.let { Confirm("حذف از لیست", "«${it.name}» از لیست حذف شود؟ فایل اصلی روی کامپیوتر پاک نمی‌شود.", "حذف", { vm.delete(it) }) { deleting = null } }
     if (disconnect) Confirm("قطع ارتباط", "ارتباط با این کامپیوتر قطع شود؟ برای اتصال دوباره کد جدید لازم است.", "قطع", { vm.unpair() }) { disconnect = false }
 }
