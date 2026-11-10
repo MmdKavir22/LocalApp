@@ -2,7 +2,8 @@
 
   python run.py                      run now (opens the web panel)
   python run.py --port 9000
-  python run.py --install-autostart  start at Windows logon via Task Scheduler (+ restart after crash)
+  python run.py --install-autostart  start at Windows logon as administrator via Task Scheduler (+ restart after crash)
+                                     (add --no-admin for normal permissions)
   python run.py --remove-autostart | --autostart-status
 """
 import argparse, os, sys, webbrowser
@@ -19,6 +20,7 @@ def parse():
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--supervise", action="store_true", help="restart the server automatically if it crashes")
     ap.add_argument("--install-autostart", action="store_true")
+    ap.add_argument("--no-admin", action="store_true", help="install the autostart task without administrator rights")
     ap.add_argument("--remove-autostart", action="store_true")
     ap.add_argument("--autostart-status", action="store_true")
     ap.add_argument("--print-task-xml", action="store_true", help=argparse.SUPPRESS)
@@ -36,9 +38,9 @@ def main():
     a = parse()
     attach_log()
     if a.print_task_xml:
-        print(service.task_xml(a.port)); return 0
+        print(service.task_xml(a.port, admin=not a.no_admin)); return 0
     if a.install_autostart:
-        print(service.install_autostart(a.port)); return 0
+        print(service.install_autostart(a.port, admin=not a.no_admin)); return 0
     if a.remove_autostart:
         print(service.remove_autostart()); return 0
     if a.autostart_status:

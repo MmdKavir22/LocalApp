@@ -17,13 +17,13 @@ server/    سرور ویندوز (Python / FastAPI) + پنل وب (server/web)
 
 > فایروال ویندوز: بار اول اجازه‌ی دسترسی Python روی **Private networks** را بدهید (پورت‌های TCP `8765` و UDP `8766` برای پیدا کردن خودکار).
 
-اجرای خودکار با ویندوز (اختیاری): `install_autostart.bat` را اجرا کنید (یا `python run.py --install-autostart`).
+اجرای خودکار با ویندوز (اختیاری): `install_autostart.bat` را **یک بار** اجرا کنید و تأیید UAC را بزنید، سپس ویندوز را ری‌استارت کنید. از آن به بعد سرور با هر ورود به ویندوز **با دسترسی Administrator** بالا می‌آید (بدون پرسش UAC)، و برنامه‌هایی که از گوشی اجرا می‌کنید هم با همین دسترسی اجرا می‌شوند. برای نصب با دسترسی عادی: `python run.py --install-autostart --no-admin`.
 - با **Task Scheduler** ساخته می‌شود و با هر ورود به ویندوز سرور بدون پنجره اجرا می‌شود؛ `remove_autostart.bat` آن را حذف می‌کند.
 - از اجرای هم‌زمان چند نمونه جلوگیری می‌شود (اجرای دوباره فقط پنل وب را باز می‌کند).
 - اگر سرور Crash کند، خودکار دوباره اجرا می‌شود (نظارت داخلی + RestartOnFailure در Task Scheduler). لاگ: `%APPDATA%\KavirRemote\server.log`.
 - وضعیت: `python run.py --autostart-status`. پورت دلخواه: `python run.py --port 9000`.
 
-برای بستن برنامه‌هایی که با Administrator اجرا شده‌اند، سرور را هم به‌صورت Administrator اجرا کنید.
+`start_server.bat` هم همیشه خودش دسترسی Administrator می‌خواهد (برای بستن برنامه‌هایی که با Administrator اجرا شده‌اند لازم است).
 
 ## ۲) اتصال گوشی
 

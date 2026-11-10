@@ -89,14 +89,14 @@ def _pythonw() -> str:
     w = Path(sys.executable).with_name("pythonw.exe")
     return str(w if w.exists() else sys.executable)
 
-def task_xml(port: int, user: str = "") -> str:
+def task_xml(port: int, user: str = "", admin: bool = True) -> str:
     args = f'"{ROOT / "run.py"}" --supervise --no-browser --port {port}'
     uid = f"<UserId>{escape(user)}</UserId>" if user else ""
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Kavir Remote server (starts at logon, restarts after a crash)</Description></RegistrationInfo>
+  <RegistrationInfo><Description>Kavir Remote server (starts at logon, runs elevated, restarts after a crash)</Description></RegistrationInfo>
   <Triggers><LogonTrigger><Enabled>true</Enabled>{uid}</LogonTrigger></Triggers>
-  <Principals><Principal id="Author">{uid}<LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Principals><Principal id="Author">{uid}<LogonType>InteractiveToken</LogonType><RunLevel>{"HighestAvailable" if admin else "LeastPrivilege"}</RunLevel></Principal></Principals>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
@@ -120,12 +120,24 @@ def _legacy_startup_file() -> Optional[Path]:
     appdata = os.environ.get("APPDATA")
     return Path(appdata) / "Microsoft/Windows/Start Menu/Programs/Startup/KavirRemote.bat" if appdata else None
 
-def install_autostart(port: int) -> str:
+def is_admin() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+def install_autostart(port: int, admin: bool = True) -> str:
     if os.name != "nt":
         raise SystemExit("Autostart is only supported on Windows")
+    if admin and not is_admin():
+        raise SystemExit("Administrator permission is required to install an elevated autostart task.\n"
+                         "Run install_autostart.bat (it asks for permission), or use --no-admin.")
     user = os.environ.get("USERDOMAIN", "") + "\\" + os.environ.get("USERNAME", "")
     with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-16") as f:
-        f.write(task_xml(port, user if len(user) > 1 else ""))
+        f.write(task_xml(port, user if len(user) > 1 else "", admin))
         xml_path = f.name
     try:
         r = _schtasks("/Create", "/TN", TASK_NAME, "/XML", xml_path, "/F")
@@ -137,7 +149,8 @@ def install_autostart(port: int) -> str:
     if old and old.exists():
         old.unlink()
     _schtasks("/Run", "/TN", TASK_NAME)                # start now; the single-instance lock prevents duplicates
-    return f"Task '{TASK_NAME}' installed. The server starts at every logon and restarts after a crash."
+    mode = "as administrator" if admin else "with normal permissions"
+    return f"Task '{TASK_NAME}' installed. The server now starts {mode} at every logon and restarts after a crash. Restart Windows to apply."
 
 def remove_autostart() -> str:
     if os.name != "nt":
