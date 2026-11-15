@@ -388,14 +388,10 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun SettingsScreen(vm: MainVM) {
-    var repo by remember { mutableStateOf(vm.store.ghRepo) }
-    var token by remember { mutableStateOf(vm.store.ghToken) }
     var disconnect by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<AppItem?>(null) }
     var deleting by remember { mutableStateOf<AppItem?>(null) }
-    val rel = vm.release
-    val newer = rel != null && Updater.isNewer(rel.tag, BuildConfig.VERSION_NAME)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Section("برنامه‌ها") {
             Button({ adding = true }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
@@ -444,19 +440,7 @@ private fun SettingsScreen(vm: MainVM) {
             Text(if (vm.online) "وضعیت: متصل" else "وضعیت: قطع (تلاش مجدد خودکار)", color = if (vm.online) KOk else KRed)
             OutlinedButton({ disconnect = true }, Modifier.fillMaxWidth()) { Text("قطع ارتباط و جفت‌سازی مجدد") }
         }
-        Section("GitHub Update") {
-            Field(repo, { repo = it }, "GitHub Repository URL", isLtr = true, keyboard = KeyboardType.Uri)
-            Field(token, { token = it }, "GitHub Personal Access Token (برای ریپوی عمومی لازم نیست)", isLtr = true, secret = true)
-            OutlinedButton({ vm.saveGithub(repo, token) }, Modifier.fillMaxWidth()) { Text("ذخیره") }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button({ vm.saveGithub(repo, token); vm.checkUpdate() }, Modifier.weight(1f), enabled = !vm.busy && repo.isNotBlank()) { Text("Check for Updates") }
-                Button({ vm.update() }, Modifier.weight(1f), enabled = !vm.busy && newer, colors = ButtonDefaults.buttonColors(containerColor = KRed)) { Text("Update") }
-            }
-            if (vm.updateMsg.isNotBlank()) Text(vm.updateMsg, color = if (newer) LocalAccent.current else KMute)
-            if (newer && rel != null && rel.notes.isNotBlank()) Text(rel.notes.take(500), color = KMute, fontSize = 12.sp)
-            if (vm.updateProgress in 0..99) LinearProgressIndicator(progress = { vm.updateProgress / 100f }, Modifier.fillMaxWidth(), color = LocalAccent.current)
-            Text("نسخه نصب‌شده: ${BuildConfig.VERSION_NAME}", color = KMute, fontSize = 12.sp)
-        }
+        Text("Kavir Remote ${BuildConfig.VERSION_NAME} · به‌روزرسانی از طریق Kavir Store", color = KMute, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
     }
     if (adding) EditDialog(vm, null) { adding = false }
     editing?.let { EditDialog(vm, it) { editing = null } }

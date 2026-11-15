@@ -13,6 +13,11 @@ concurrency:
   group: build-release
   cancel-in-progress: false
 
+env:
+  PACKAGE: com.kavir.remote
+  # Optional: lets Kavir Store pick up a release within a minute instead of within the hour.
+  KAVIR_STORE_TOKEN: ${{ secrets.KAVIR_STORE_TOKEN }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,6 +37,19 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
 
+      - name: Decide version (versionCode always increases)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LAST_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+          LAST=0
+          if [[ "$LAST_TAG" =~ ^v1\.0\.([0-9]+)$ ]]; then LAST=${BASH_REMATCH[1]}; fi
+          RUN=${{ github.run_number }}
+          CODE=$(( RUN > LAST ? RUN : LAST + 1 ))
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=1.0.$CODE" >> "$GITHUB_ENV"
+          echo "Previous release: ${LAST_TAG:-none}  ->  building versionCode $CODE (1.0.$CODE)"
+
       - name: Decode signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -42,7 +60,6 @@ jobs:
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/kr.keystore"
           echo "KEYSTORE_FILE=$RUNNER_TEMP/kr.keystore" >> "$GITHUB_ENV"
-          echo "VERSION_NAME=1.0.${{ github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Build release APK
         working-directory: android
@@ -50,7 +67,43 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease --stacktrace -PappVersionCode=${{ github.run_number }} -PappVersionName=${{ env.VERSION_NAME }}
+        run: gradle assembleRelease --stacktrace -PappVersionCode=${{ env.VERSION_CODE }} -PappVersionName=${{ env.VERSION_NAME }}
+
+      - name: Verify APK (package, version, signature, upgrade compatibility)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          fail() { echo "::error::$1"; exit 1; }
+          badging() { "$BT/aapt2" dump badging "$1"; }
+          field() { sed -n "s/^package: .*$1='\([^']*\)'.*/\1/p" | head -1; }
+          signer() { "$BT/apksigner" verify --print-certs "$1" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1; }
+
+          info=$(badging "$APK")
+          pkg=$(field name <<<"$info"); code=$(field versionCode <<<"$info")
+          minsdk=$(sed -n "s/^\(minSdkVersion\|sdkVersion\):'\([0-9]*\)'.*/\2/p" <<<"$info" | head -1)
+          sig=$(signer "$APK")
+          echo "package=$pkg versionCode=$code minSdk=$minsdk"
+          echo "signer SHA-256=$sig"
+          [ "$pkg" = "$PACKAGE" ] || fail "Package name changed ($pkg != $PACKAGE) - installed apps could not be updated"
+          [ "$code" = "$VERSION_CODE" ] || fail "versionCode in APK ($code) differs from expected ($VERSION_CODE)"
+          [ -n "$sig" ] || fail "APK is unsigned or its signature is invalid"
+
+          mkdir -p prev
+          if gh release download --pattern '*.apk' --dir prev 2>/dev/null && ls prev/*.apk >/dev/null 2>&1; then
+            PREV=$(ls prev/*.apk | head -1)
+            pinfo=$(badging "$PREV")
+            ppkg=$(field name <<<"$pinfo"); pcode=$(field versionCode <<<"$pinfo"); psig=$(signer "$PREV")
+            echo "previous release: package=$ppkg versionCode=$pcode signer=$psig"
+            [ "$ppkg" = "$pkg" ] || fail "Package name differs from the previous release"
+            [ "$psig" = "$sig" ] || fail "Signing certificate differs from the previous release - installed apps could not be updated"
+            [ "$code" -gt "$pcode" ] || fail "versionCode ($code) must be greater than the previous release ($pcode)"
+            echo "OK: same package + same signing key, versionCode $pcode -> $code"
+          else
+            echo "No previous release APK to compare with."
+          fi
 
       - name: Collect release files
         run: |
@@ -74,7 +127,22 @@ jobs:
         with:
           tag_name: v${{ env.VERSION_NAME }}
           name: Kavir Remote v${{ env.VERSION_NAME }}
+          draft: false
+          prerelease: false
+          make_latest: true
           generate_release_notes: true
+          body: |
+            **Kavir Remote** `${{ env.PACKAGE }}` — version ${{ env.VERSION_NAME }} (versionCode ${{ env.VERSION_CODE }}). Updates are delivered through Kavir Store.
           files: |
             dist/KavirRemote-v${{ env.VERSION_NAME }}.apk
             dist/KavirRemoteServer-v${{ env.VERSION_NAME }}.zip
+
+      - name: Ask Kavir Store to sync now (optional)
+        if: ${{ env.KAVIR_STORE_TOKEN != '' }}
+        continue-on-error: true
+        run: |
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer $KAVIR_STORE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/kavirkobra19/KavirStore/dispatches \
+            -d '{"event_type":"app-release","client_payload":{"repo":"${{ github.repository }}"}}'

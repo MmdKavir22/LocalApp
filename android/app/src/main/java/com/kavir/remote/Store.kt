@@ -14,14 +14,17 @@ class Store(ctx: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
+    init {
+        // The in-app updater was removed (updates come from Kavir Store). Erase its saved GitHub token + repo.
+        if (sp.contains("ghToken") || sp.contains("ghRepo")) sp.edit().remove("ghToken").remove("ghRepo").apply()
+    }
+
     private fun get(k: String) = sp.getString(k, "") ?: ""
     private fun put(k: String, v: String) = sp.edit().putString(k, v).apply()
 
     var host: String get() = get("host"); set(v) = put("host", v)
     var token: String get() = get("token"); set(v) = put("token", v)
     var pcName: String get() = get("pcName"); set(v) = put("pcName", v)
-    var ghToken: String get() = get("ghToken"); set(v) = put("ghToken", v)
-    var ghRepo: String get() = get("ghRepo"); set(v) = put("ghRepo", v)
 
     var appName: String get() = get("appName"); set(v) = put("appName", v)
     var accent: Int get() = get("accent").toIntOrNull() ?: 0; set(v) = put("accent", v.toString())

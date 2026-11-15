@@ -8,7 +8,7 @@ from xml.sax.saxutils import escape
 ROOT = Path(__file__).resolve().parent.parent
 TASK_NAME = "KavirRemote"
 EXIT_ALREADY_RUNNING = 3
-REQUIRED = {"fastapi": "fastapi", "uvicorn": "uvicorn", "psutil": "psutil", "multipart": "python-multipart"}
+REQUIRED = {"fastapi": "fastapi", "uvicorn": "uvicorn", "wsproto": "wsproto", "psutil": "psutil", "multipart": "python-multipart"}
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 def _data_dir() -> Path:

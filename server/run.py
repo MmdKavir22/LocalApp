@@ -68,7 +68,8 @@ def main():
     print("=" * 56 + "\n")
     if not a.no_browser:
         webbrowser.open(f"http://localhost:{a.port}")
-    uvicorn.run(m.app, host="0.0.0.0", port=a.port, log_level="warning")
+    # wsproto = pure-Python WebSocket library: no compiled packages, so it installs on any Python version
+    uvicorn.run(m.app, host="0.0.0.0", port=a.port, log_level="warning", ws="wsproto")
     return 0
 
 if __name__ == "__main__":

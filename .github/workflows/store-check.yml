@@ -1,0 +1,41 @@
+name: Kavir Store compatibility check
+
+# Manual. Runs Kavir Store's OWN catalog sync against this repository's latest Release in a scratch
+# checkout (nothing is pushed anywhere) and prints exactly what the store would show for this app.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: kavirkobra19/KavirStore
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Register only this app in a scratch catalog
+        run: |
+          python3 - <<'PY'
+          import json
+          json.dump({"schema": 1, "apps": [{
+              "repo": "${{ github.repository }}", "enabled": True, "featured": False, "category": "tools",
+              "asset_pattern": "^KavirRemote-.*\\.apk$", "prerelease": False}]},
+              open("catalog/sources.json", "w"), indent=2)
+          PY
+
+      - name: Run Kavir Store's catalog sync
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: kavirkobra19/KavirStore
+        run: |
+          python scripts/sync_catalog.py
+          echo "=========== what Kavir Store would list ==========="
+          cat catalog/apps.json
