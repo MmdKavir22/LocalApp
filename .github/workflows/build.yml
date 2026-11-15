@@ -78,11 +78,12 @@ jobs:
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           fail() { echo "::error::$1"; exit 1; }
           badging() { "$BT/aapt2" dump badging "$1"; }
-          field() { sed -n "s/^package: .*$1='\([^']*\)'.*/\1/p" | head -1; }
+          pkgname() { sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1; }
+          vcode() { sed -n "s/^package: .*[ ]versionCode='\([0-9]*\)'.*/\1/p" | head -1; }
           signer() { "$BT/apksigner" verify --print-certs "$1" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1; }
 
           info=$(badging "$APK")
-          pkg=$(field name <<<"$info"); code=$(field versionCode <<<"$info")
+          pkg=$(pkgname <<<"$info"); code=$(vcode <<<"$info")
           minsdk=$(sed -n "s/^\(minSdkVersion\|sdkVersion\):'\([0-9]*\)'.*/\2/p" <<<"$info" | head -1)
           sig=$(signer "$APK")
           echo "package=$pkg versionCode=$code minSdk=$minsdk"
@@ -95,7 +96,7 @@ jobs:
           if gh release download --pattern '*.apk' --dir prev 2>/dev/null && ls prev/*.apk >/dev/null 2>&1; then
             PREV=$(ls prev/*.apk | head -1)
             pinfo=$(badging "$PREV")
-            ppkg=$(field name <<<"$pinfo"); pcode=$(field versionCode <<<"$pinfo"); psig=$(signer "$PREV")
+            ppkg=$(pkgname <<<"$pinfo"); pcode=$(vcode <<<"$pinfo"); psig=$(signer "$PREV")
             echo "previous release: package=$ppkg versionCode=$pcode signer=$psig"
             [ "$ppkg" = "$pkg" ] || fail "Package name differs from the previous release"
             [ "$psig" = "$sig" ] || fail "Signing certificate differs from the previous release - installed apps could not be updated"
