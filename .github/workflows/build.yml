@@ -74,7 +74,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          exec > >(tee /tmp/verify.log) 2>&1
           APK=android/app/build/outputs/apk/release/app-release.apk
           # same build-tools generation the app is compiled with (newest ones may need a newer Java than 17)
           BT="$ANDROID_HOME/build-tools/34.0.0"
@@ -108,17 +107,6 @@ jobs:
           else
             echo "No previous release APK to compare with."
           fi
-
-      - name: TEMP diagnostics -> branch ci-diagnostics
-        if: always()
-        continue-on-error: true
-        run: |
-          mkdir -p /tmp/diag && cp /tmp/verify.log /tmp/diag/verify.txt 2>/dev/null || echo "no verify.log" > /tmp/diag/verify.txt
-          ls "$ANDROID_HOME"/build-tools >> /tmp/diag/verify.txt 2>&1 || true
-          cd /tmp/diag && git init -q && git checkout -q -b ci-diagnostics
-          git config user.name ci && git config user.email ci@users.noreply.github.com
-          git add . && git commit -q -m "diagnostics ${{ github.run_number }}"
-          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-diagnostics
 
       - name: Collect release files
         run: |
