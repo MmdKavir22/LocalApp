@@ -23,6 +23,7 @@ def parse():
     ap.add_argument("--no-admin", action="store_true", help="install the autostart task without administrator rights")
     ap.add_argument("--remove-autostart", action="store_true")
     ap.add_argument("--autostart-status", action="store_true")
+    ap.add_argument("--diagnose", action="store_true", help="print a connectivity report (firewall, addresses, network profile)")
     ap.add_argument("--print-task-xml", action="store_true", help=argparse.SUPPRESS)
     return ap.parse_args()
 
@@ -43,6 +44,8 @@ def main():
         print(service.install_autostart(a.port, admin=not a.no_admin)); return 0
     if a.remove_autostart:
         print(service.remove_autostart()); return 0
+    if a.diagnose:
+        print(service.diagnose(a.port)); return 0
     if a.autostart_status:
         print("Autostart:", service.autostart_status()); return 0
 
@@ -59,6 +62,7 @@ def main():
     import uvicorn
     from app import main as m
     db.init(); m.new_code(); m.HTTP_PORT = a.port
+    service.ensure_firewall(a.port, m.DISCOVERY_PORT)
     print("\n" + "=" * 56 + "\n  Kavir Remote Server\n" + "=" * 56)
     for ip in m.lan_ips():
         print(f"  Phone address : {ip}:{a.port}")

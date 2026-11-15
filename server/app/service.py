@@ -167,3 +167,49 @@ def autostart_status() -> str:
         return "not supported on this OS"
     r = _schtasks("/Query", "/TN", TASK_NAME)
     return "installed" if r.returncode == 0 else "not installed"
+
+
+# ------------------------------------------------------------------ Windows Firewall (phones must be able to reach the server)
+def _netsh(*a):
+    return subprocess.run(["netsh", "advfirewall", "firewall", *a], capture_output=True, text=True, creationflags=NO_WINDOW)
+
+def ensure_firewall(port: int, udp_port: int = 8766) -> None:
+    """Windows + administrator only. Allows inbound TCP (API/web) and UDP (auto-discovery) from the local subnet.
+    Without this, Windows silently blocks the phone when the server was started without a console (task / elevated)."""
+    if os.name != "nt" or not is_admin():
+        return
+    for proto, p in (("TCP", port), ("UDP", udp_port)):
+        name = f"Kavir Remote {proto} {p}"
+        if _netsh("show", "rule", f"name={name}").returncode == 0:
+            continue
+        r = _netsh("add", "rule", f"name={name}", "dir=in", "action=allow", f"protocol={proto}",
+                   f"localport={p}", "remoteip=LocalSubnet", "profile=any")
+        log(f"Firewall rule '{name}': " + ("added" if r.returncode == 0 else "FAILED - " + (r.stdout or r.stderr).strip()))
+
+def diagnose(port: int) -> str:
+    """Human-readable connectivity report (python run.py --diagnose)."""
+    import socket, urllib.request
+    out = [f"Administrator: {'yes' if is_admin() else 'NO (firewall rules cannot be added)'}"]
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/info", timeout=3).read()
+        out.append(f"Server on this PC: running on port {port}")
+    except Exception:
+        out.append(f"Server on this PC: NOT reachable on port {port} -> start it first (start_server.bat)")
+    try:
+        import psutil
+        ips = [a.address for v in psutil.net_if_addrs().values() for a in v
+               if a.family == socket.AF_INET and not a.address.startswith(("127.", "169.254."))]
+    except Exception:
+        ips = []
+    out.append("PC addresses (the phone must be on the same network as one of these): " + (", ".join(ips) or "none found"))
+    if os.name == "nt":
+        for proto, p in (("TCP", port), ("UDP", 8766)):
+            ok = _netsh("show", "rule", f"name=Kavir Remote {proto} {p}").returncode == 0
+            out.append(f"Firewall rule {proto} {p}: {'present' if ok else 'MISSING (run start_server.bat as administrator)'}")
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "Get-NetConnectionProfile | ForEach-Object { $_.Name + ' = ' + $_.NetworkCategory }"],
+                           capture_output=True, text=True, creationflags=NO_WINDOW)
+        out.append("Network profile: " + (r.stdout.strip().replace("\n", "; ") or "unknown"))
+    out.append(f"Phone test: open  http://<one of the addresses above>:{port}/api/info  in the phone's browser. "
+               "If it shows JSON the network is fine; if it hangs, the firewall / Wi-Fi isolation / VPN is blocking.")
+    return "\n".join(out)
