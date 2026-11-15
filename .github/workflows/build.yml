@@ -76,12 +76,14 @@ jobs:
           set -uo pipefail
           exec > >(tee /tmp/verify.log) 2>&1
           APK=android/app/build/outputs/apk/release/app-release.apk
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          # same build-tools generation the app is compiled with (newest ones may need a newer Java than 17)
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          [ -x "$BT/apksigner" ] || BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | head -1)
           fail() { echo "::error::$1"; exit 1; }
           badging() { "$BT/aapt2" dump badging "$1"; }
           pkgname() { sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -1; }
           vcode() { sed -n "s/^package: .*[ ]versionCode='\([0-9]*\)'.*/\1/p" | head -1; }
-          signer() { "$BT/apksigner" verify --print-certs "$1" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1; }
+          signer() { "$BT/apksigner" verify --print-certs "$1" 2>&1 | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1; }
 
           info=$(badging "$APK")
           pkg=$(pkgname <<<"$info"); code=$(vcode <<<"$info")
@@ -91,7 +93,7 @@ jobs:
           echo "signer SHA-256=$sig"
           [ "$pkg" = "$PACKAGE" ] || fail "Package name changed ($pkg != $PACKAGE) - installed apps could not be updated"
           [ "$code" = "$VERSION_CODE" ] || fail "versionCode in APK ($code) differs from expected ($VERSION_CODE)"
-          [ -n "$sig" ] || fail "APK is unsigned or its signature is invalid"
+          if [ -z "$sig" ]; then "$BT/apksigner" verify --print-certs "$APK" 2>&1 | head -20; fail "APK is unsigned or its signature is invalid (build-tools: $BT)"; fi
 
           mkdir -p prev
           if gh release download --pattern '*.apk' --dir prev 2>/dev/null && ls prev/*.apk >/dev/null 2>&1; then
